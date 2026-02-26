@@ -22,9 +22,7 @@
     "module/ui.js"
   ],
   "styles": [
-    {
-      "src": "styles/control-panel.css"
-    }
+    "styles/control-panel.css"
   ],
   "languages": [
     {

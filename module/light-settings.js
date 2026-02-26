@@ -16,7 +16,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     return foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
       id: `${MODULE_ID}-control-panel-light`,
       window: {
-        resizable: false,
+        resizable: true,
         autoResize: false
       }
     });
@@ -34,7 +34,15 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     }));
 
     const selectedLightKey = this.options.selectedLightKey || "torchLight";
-    const selectedModel = models.find(model => model.key === selectedLightKey) || models[0] || {};
+    const selectedModelRaw = models.find(model => model.key === selectedLightKey) || models[0] || {};
+    const selectedModel = {
+      intensity: 0.5,
+      dim: 0,
+      bright: 0,
+      angle: 360,
+      color: "#ffffff",
+      ...selectedModelRaw
+    };
 
     return {
       ...context,
@@ -50,13 +58,16 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     if (!this._alSizedOnce) {
       this._alSizedOnce = true;
       queueMicrotask(() => {
-        try { this.setPosition({ width: 450, height: 360 }); } catch (_error) {}
+        try { this.setPosition({ width: 560, height: 470 }); } catch (_error) {}
       });
     }
 
     requestAnimationFrame(() => {
       const content = this.element.querySelector(".window-content");
-      if (content) this.activateListeners(content);
+      if (content) {
+        content.classList.add("bm-lampe-torche-panel-content");
+        this.activateListeners(content);
+      }
     });
   }
 
@@ -139,6 +150,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     if (animationSelect) {
       const animations = Object.keys(CONFIG.Canvas.lightAnimations || {});
       animationSelect.innerHTML = "";
+      animationSelect.append(new Option("None", "none"));
       for (const animation of animations) {
         const label = game.i18n.localize(CONFIG.Canvas.lightAnimations[animation]?.label || animation);
         animationSelect.append(new Option(label, animation));
