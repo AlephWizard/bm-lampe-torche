@@ -1,3 +1,5 @@
+import { ControlPanelLight } from "./light-settings.js";
+
 const MODULE_ID = "bm-lampe-torche";
 const GLOBAL_API_KEY = "BmLampeTorche";
 const LIGHT_MODELS_SETTING = "lightModels";
@@ -85,6 +87,10 @@ export const DEFAULT_LIGHT_MODELS = {
   }
 };
 
+if (typeof Handlebars !== "undefined" && !Handlebars.helpers?.eq) {
+  Handlebars.registerHelper("eq", (a, b) => a === b);
+}
+
 Hooks.once("init", async function () {
   console.log(`${MODULE_ID} | registering torch-only settings`);
 
@@ -136,6 +142,15 @@ Hooks.once("init", async function () {
       lampe: game.i18n.localize("agnostic-light.controlPanel.lightIconlampe")
     },
     default: "feu"
+  });
+
+  game.settings.registerMenu(MODULE_ID, "openControlPanel", {
+    name: game.i18n.localize("agnostic-light.controlPanel.torchSettings"),
+    label: game.i18n.localize("agnostic-light.controlPanel.config"),
+    hint: game.i18n.localize("agnostic-light.controlPanel.confighint"),
+    icon: "fa-solid fa-flashlight",
+    type: ControlPanelLight,
+    restricted: true
   });
 
   game.settings.registerMenu(MODULE_ID, "resetPresets", {

@@ -1,12 +1,12 @@
 {
   "id": "bm-lampe-torche",
-  "title": "BM Lampe Torche",
+  "title": "bm-lampe-torche",
   "version": "1.0.9",
   "compatibility": {
     "minimum": "13",
     "verified": "13.348"
   },
-  "description": "Module Foundry dedie a la gestion de la torche sur les tokens (allumage/extinction et presets internes), sans panneaux rapides lumiere/vision.",
+  "description": "<p>Module Foundry dedie a la gestion de la torche sur les tokens (allumage/extinction et presets internes), sans panneaux rapides lumiere/vision.</p>",
   "authors": [
     {
       "name": "Jello195",
@@ -21,7 +21,11 @@
     "module/control-panel.js",
     "module/ui.js"
   ],
-  "styles": [],
+  "styles": [
+    {
+      "src": "styles/control-panel.css"
+    }
+  ],
   "languages": [
     {
       "lang": "en",

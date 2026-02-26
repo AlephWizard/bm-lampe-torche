@@ -1,0 +1,47 @@
+<form class="al-form">
+  <div class="al-form-group">
+    <label for="light-select">{{localize "agnostic-light.controlPanel.selectLight"}}</label>
+    <select id="light-select" style="width:100%;">
+      {{#each models}}
+        <option value="{{this.key}}" {{#if (eq this.key ../selectedLightKey)}}selected{{/if}}>
+          {{localize this.name}}
+        </option>
+      {{/each}}
+    </select>
+  </div>
+
+  <div class="al-form-group">
+    <label for="al-color">{{localize "LIGHT.FIELDS.color.label"}}</label>
+    <input type="color" id="al-color" name="color" value="{{selectedModel.color}}" />
+  </div>
+
+  <div class="al-form-group">
+    <label for="al-intensity">{{localize "agnostic-light.controlPanel.intensity"}}</label>
+    <div class="al-range-group">
+      <input type="range" id="al-intensity" name="intensity" min="0" max="1" step="0.05" value="{{selectedModel.intensity}}" />
+      <span id="al-intensity-value">{{selectedModel.intensity}}</span>
+    </div>
+  </div>
+
+  <div class="al-form-group">
+    <label for="al-radius">{{localize "agnostic-light.controlPanel.radius"}}</label>
+    <div class="al-input-group">
+      <span>{{localize "LIGHT.FIELDS.dim.label"}}</span>
+      <input type="number" id="al-dim" name="dim" min="0" value="{{selectedModel.dim}}" />
+      <span>{{localize "LIGHT.FIELDS.bright.label"}}</span>
+      <input type="number" id="al-bright" name="bright" min="0" value="{{selectedModel.bright}}" />
+    </div>
+  </div>
+
+  <div class="al-form-group">
+    <label for="al-angle">{{localize "LIGHT.FIELDS.angle.label"}}</label>
+    <input type="number" id="al-angle" name="angle" min="0" max="360" value="{{selectedModel.angle}}" />
+  </div>
+
+  <div class="al-form-group">
+    <label for="al-animation">{{localize "LIGHT.FIELDS.animation.label"}}</label>
+    <select id="al-animation" name="animation"></select>
+  </div>
+
+  <button type="button" class="al-submit-button">{{localize "agnostic-light.controlPanel.save"}}</button>
+</form>
