@@ -34,6 +34,14 @@ Hooks.on("renderTokenHUD", (hud, html, data) => {
     token.document.setFlag(MODULE_ID, "lightIconState", "off");
   });
 
+  const openPanelFromHud = ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openTorchControlPanelForToken(token);
+  };
+  onButton.addEventListener("contextmenu", openPanelFromHud);
+  offButton.addEventListener("contextmenu", openPanelFromHud);
+
   const leftCol = html.querySelector(".col.left");
   if (!leftCol) return;
   leftCol.appendChild(onButton);
@@ -102,5 +110,23 @@ function lightson(tokenId, defaultModel = "torchLight") {
     console.log(`${MODULE_ID} | light on with settings from ${chosenModel}`);
   } catch (error) {
     console.error(`${MODULE_ID} | Error applying light for token:`, error);
+  }
+}
+
+function openTorchControlPanelForToken(token) {
+  if (!token?.document) return;
+  const selectedLightKey = String(token.document.getFlag(MODULE_ID, "chosenModel") || "torchLight").trim() || "torchLight";
+  const tokenId = String(token.id || token.document.id || "").trim();
+  try {
+    const app = window[GLOBAL_API_KEY]?.openControlPanel?.({
+      selectedLightKey,
+      tokenId,
+      applyOnSave: true
+    });
+    if (!app) {
+      ui.notifications?.warn?.("BM Lampe Torche | Panneau de configuration indisponible.");
+    }
+  } catch (error) {
+    console.error(`${MODULE_ID} | Error opening control panel for token:`, error);
   }
 }

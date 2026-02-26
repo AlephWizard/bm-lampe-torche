@@ -16,6 +16,11 @@
   </div>
 
   <div class="al-form-group">
+    <label for="al-max-radius">Rayon max (map)</label>
+    <input type="number" id="al-max-radius" name="maxLightRadius" min="0" step="0.01" value="{{maxLightRadiusValue}}" />
+  </div>
+
+  <div class="al-form-group">
     <label for="al-intensity">{{localize "agnostic-light.controlPanel.intensity"}}</label>
     <div class="al-range-group">
       <input type="range" id="al-intensity" name="intensity" min="0" max="1" step="0.05" value="{{selectedModel.intensity}}" />
@@ -27,13 +32,15 @@
     <label for="al-radius">{{localize "agnostic-light.controlPanel.radius"}}</label>
     <div class="al-input-group">
       <span>{{localize "LIGHT.FIELDS.dim.label"}}</span>
-      <input type="number" id="al-dim" name="dim" min="0" max="{{maxRadius}}" value="{{selectedModel.dim}}" />
+      <input type="number" id="al-dim" name="dim" min="0" max="{{effectiveMaxRadius}}" value="{{selectedModel.dim}}" />
       <span>{{localize "LIGHT.FIELDS.bright.label"}}</span>
-      <input type="number" id="al-bright" name="bright" min="0" max="{{maxRadius}}" value="{{selectedModel.bright}}" />
+      <input type="number" id="al-bright" name="bright" min="0" max="{{effectiveMaxRadius}}" value="{{selectedModel.bright}}" />
     </div>
   </div>
   {{#if maxRadiusEnabled}}
-  <p class="al-form-note">Rayon max applique : {{maxRadius}}</p>
+  <p class="al-form-note">Rayon max applique : {{effectiveMaxRadius}} (mettre 0 pour illimite)</p>
+  {{else}}
+  <p class="al-form-note">Rayon max illimite (0)</p>
   {{/if}}
 
   <div class="al-form-group">

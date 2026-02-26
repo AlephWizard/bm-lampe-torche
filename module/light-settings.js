@@ -34,6 +34,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       ...model
     }));
     const maxRadius = getConfiguredMaxLightRadius();
+    const maxRadiusValue = getRawConfiguredMaxLightRadius();
 
     const selectedLightKey = this.options.selectedLightKey || "torchLight";
     const selectedModelRaw = models.find(model => model.key === selectedLightKey) || models[0] || {};
@@ -51,8 +52,9 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       models,
       selectedLightKey,
       selectedModel,
-      maxRadius: Number.isFinite(maxRadius) ? maxRadius : 9999,
-      maxRadiusEnabled: Number.isFinite(maxRadius) && maxRadius > 0
+      effectiveMaxRadius: Number.isFinite(maxRadius) ? maxRadius : 9999,
+      maxRadiusEnabled: Number.isFinite(maxRadius) && maxRadius > 0,
+      maxLightRadiusValue: maxRadiusValue
     };
   }
 
@@ -76,6 +78,21 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   activateListeners(html) {
+    const syncRadiusUiConstraints = () => {
+      const rawMax = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
+      const effectiveMax = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 9999;
+      const dimInput = html.querySelector("#al-dim");
+      const brightInput = html.querySelector("#al-bright");
+      if (dimInput) dimInput.max = String(effectiveMax);
+      if (brightInput) brightInput.max = String(effectiveMax);
+      const note = html.querySelector(".al-form-note");
+      if (note) {
+        note.textContent = (rawMax > 0)
+          ? `Rayon max applique : ${effectiveMax} (mettre 0 pour illimite)`
+          : "Rayon max illimite (0)";
+      }
+    };
+
     html.querySelector("#light-select")?.addEventListener("change", event => {
       const api = window[GLOBAL_API_KEY] || { models: {} };
       const selectedKey = event.target.value;
@@ -104,11 +121,22 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       });
     });
 
+    html.querySelector("#al-max-radius")?.addEventListener("change", () => {
+      syncRadiusUiConstraints();
+      const dimInput = html.querySelector("#al-dim");
+      const brightInput = html.querySelector("#al-bright");
+      const maxRadius = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
+      const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, normalizeMaxLightRadiusLimit(maxRadius));
+      if (dimInput) dimInput.value = String(normalized.dim);
+      if (brightInput) brightInput.value = String(normalized.bright);
+    });
+
     html.querySelectorAll("#al-dim, #al-bright").forEach(input => {
       input.addEventListener("change", () => {
         const dimInput = html.querySelector("#al-dim");
         const brightInput = html.querySelector("#al-bright");
-        const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, getConfiguredMaxLightRadius());
+        const rawMax = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
+        const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, normalizeMaxLightRadiusLimit(rawMax));
         if (dimInput) dimInput.value = String(normalized.dim);
         if (brightInput) brightInput.value = String(normalized.bright);
       });
@@ -132,7 +160,14 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         return;
       }
 
-      const radii = normalizeLightRadii(data.dim, data.bright, getConfiguredMaxLightRadius());
+      const requestedMaxRadius = normalizeMaxLightRadiusSettingValue(data.maxLightRadius);
+      const effectiveMaxRadius = normalizeMaxLightRadiusLimit(requestedMaxRadius);
+      const currentMaxRadiusRaw = getRawConfiguredMaxLightRadius();
+      if (requestedMaxRadius !== currentMaxRadiusRaw) {
+        await game.settings.set(MODULE_ID, MAX_LIGHT_RADIUS_SETTING, requestedMaxRadius);
+      }
+
+      const radii = normalizeLightRadii(data.dim, data.bright, effectiveMaxRadius);
       const updatedLight = {
         color: data.color,
         intensity: Number.parseFloat(data.intensity),
@@ -147,9 +182,11 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       };
 
       api.models[selectedKey] = foundry.utils.mergeObject(modelData, updatedLight, { overwrite: true });
+      api.models = clampAllLightModels(api.models, effectiveMaxRadius);
 
       try {
         await saveLightModels(api.models);
+        await applyPresetToTargetsOnSave.call(this, selectedKey);
 
         const windowEl = this.element;
         if (windowEl) {
@@ -179,6 +216,8 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         animationSelect.value = selectedModel.animation.type;
       }
     }
+
+    syncRadiusUiConstraints();
   }
 }
 
@@ -186,11 +225,25 @@ async function saveLightModels(models) {
   await game.settings.set(MODULE_ID, "lightModels", models);
 }
 
-function getConfiguredMaxLightRadius() {
+function getRawConfiguredMaxLightRadius() {
   const raw = Number(game.settings?.get?.(MODULE_ID, MAX_LIGHT_RADIUS_SETTING));
-  if (!Number.isFinite(raw)) return null;
-  if (raw <= 0) return null;
-  return raw;
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, raw);
+}
+
+function getConfiguredMaxLightRadius() {
+  return normalizeMaxLightRadiusLimit(getRawConfiguredMaxLightRadius());
+}
+
+function normalizeMaxLightRadiusSettingValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.round(numeric * 100) / 100);
+}
+
+function normalizeMaxLightRadiusLimit(value) {
+  const normalized = normalizeMaxLightRadiusSettingValue(value);
+  return normalized > 0 ? normalized : null;
 }
 
 function clampLightRadius(value, maxRadius = null) {
@@ -216,4 +269,46 @@ function clampLightPreset(model = {}, maxRadius = getConfiguredMaxLightRadius())
     dim: radii.dim,
     bright: radii.bright
   };
+}
+
+function clampAllLightModels(models = {}, maxRadius = getConfiguredMaxLightRadius()) {
+  const next = {};
+  for (const [key, model] of Object.entries(models)) {
+    next[key] = clampLightPreset(model, maxRadius);
+  }
+  return next;
+}
+
+async function applyPresetToTargetsOnSave(selectedKey) {
+  const api = window[GLOBAL_API_KEY];
+  if (!api?.applyLight) return;
+
+  const targetTokens = [];
+  const seen = new Set();
+  const optionTokenId = String(this?.options?.tokenId || "").trim();
+  if (optionTokenId) {
+    const token = canvas?.tokens?.get?.(optionTokenId);
+    if (token?.document) {
+      targetTokens.push(token);
+      seen.add(String(token.id || token.document.id || ""));
+    }
+  }
+
+  for (const token of canvas?.tokens?.controlled || []) {
+    const tokenId = String(token?.id || token?.document?.id || "").trim();
+    if (!token?.document || !tokenId || seen.has(tokenId)) continue;
+    targetTokens.push(token);
+    seen.add(tokenId);
+  }
+
+  if (!targetTokens.length) return;
+
+  for (const token of targetTokens) {
+    try {
+      await token.document.setFlag(MODULE_ID, "chosenModel", selectedKey);
+      await api.applyLight(token, selectedKey);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | failed to apply preset "${selectedKey}" on save`, error);
+    }
+  }
 }

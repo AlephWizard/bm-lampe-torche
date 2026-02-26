@@ -149,7 +149,7 @@ Hooks.once("init", async function () {
     name: "Rayon maximal de torche",
     hint: "Plafond applique aux rayons Tamise/Lumineux (en unites de scene). Mettre 0 pour aucune limite.",
     scope: "world",
-    config: true,
+    config: false,
     type: Number,
     default: 60
   });
@@ -184,6 +184,12 @@ Hooks.once("ready", async () => {
 
   window[GLOBAL_API_KEY] = {
     models: fixedLight,
+
+    openControlPanel(options = {}) {
+      const app = new ControlPanelLight(options);
+      app.render(true);
+      return app;
+    },
 
     async applyLight(token, lightKey) {
       const preset = this.models[lightKey];
