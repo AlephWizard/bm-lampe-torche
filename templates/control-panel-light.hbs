@@ -30,11 +30,21 @@
 
   <div class="al-form-group">
     <label for="al-radius">{{localize "agnostic-light.controlPanel.radius"}}</label>
-    <div class="al-input-group">
-      <span>{{localize "LIGHT.FIELDS.dim.label"}}</span>
-      <input type="number" id="al-dim" name="dim" min="0" max="{{effectiveMaxRadius}}" value="{{selectedModel.dim}}" />
-      <span>{{localize "LIGHT.FIELDS.bright.label"}}</span>
-      <input type="number" id="al-bright" name="bright" min="0" max="{{effectiveMaxRadius}}" value="{{selectedModel.bright}}" />
+    <div class="al-radius-stack">
+      <div class="al-range-row">
+        <span class="al-range-label">{{localize "LIGHT.FIELDS.dim.label"}}</span>
+        <div class="al-range-group">
+          <input type="range" id="al-dim" name="dim" min="0" max="{{radiusSliderMax}}" step="0.1" value="{{selectedModel.dim}}" />
+          <span id="al-dim-value">{{selectedModel.dim}}</span>
+        </div>
+      </div>
+      <div class="al-range-row">
+        <span class="al-range-label">{{localize "LIGHT.FIELDS.bright.label"}}</span>
+        <div class="al-range-group">
+          <input type="range" id="al-bright" name="bright" min="0" max="{{radiusSliderMax}}" step="0.1" value="{{selectedModel.bright}}" />
+          <span id="al-bright-value">{{selectedModel.bright}}</span>
+        </div>
+      </div>
     </div>
   </div>
   {{#if maxRadiusEnabled}}

@@ -53,6 +53,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       selectedLightKey,
       selectedModel,
       effectiveMaxRadius: Number.isFinite(maxRadius) ? maxRadius : 9999,
+      radiusSliderMax: getRadiusSliderMax(maxRadius),
       maxRadiusEnabled: Number.isFinite(maxRadius) && maxRadius > 0,
       maxLightRadiusValue: maxRadiusValue
     };
@@ -91,16 +92,27 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     const syncRadiusUiConstraints = () => {
       const rawMax = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
       const effectiveMax = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 9999;
+      const sliderMax = getRadiusSliderMax(normalizeMaxLightRadiusLimit(rawMax));
       const dimInput = html.querySelector("#al-dim");
       const brightInput = html.querySelector("#al-bright");
-      if (dimInput) dimInput.max = String(effectiveMax);
-      if (brightInput) brightInput.max = String(effectiveMax);
+      if (dimInput) dimInput.max = String(sliderMax);
+      if (brightInput) brightInput.max = String(sliderMax);
       const note = html.querySelector(".al-form-note");
       if (note) {
         note.textContent = (rawMax > 0)
           ? `Rayon max applique : ${effectiveMax} (mettre 0 pour illimite)`
-          : "Rayon max illimite (0)";
+          : `Rayon max illimite (0) • curseurs bornes par la scene (${sliderMax})`;
       }
+      syncRadiusDisplays();
+    };
+
+    const syncRadiusDisplays = () => {
+      const dimInput = html.querySelector("#al-dim");
+      const brightInput = html.querySelector("#al-bright");
+      const dimValue = html.querySelector("#al-dim-value");
+      const brightValue = html.querySelector("#al-bright-value");
+      if (dimValue && dimInput) dimValue.textContent = formatRadiusValue(dimInput.value);
+      if (brightValue && brightInput) brightValue.textContent = formatRadiusValue(brightInput.value);
     };
 
     html.querySelector("#light-select")?.addEventListener("change", event => {
@@ -122,6 +134,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         animationSelect.value = normalized.animation?.type || "none";
       }
 
+      syncRadiusDisplays();
       scheduleLivePreview();
     });
 
@@ -146,7 +159,10 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     });
 
     html.querySelectorAll("#al-dim, #al-bright").forEach(input => {
-      input.addEventListener("input", scheduleLivePreview);
+      input.addEventListener("input", () => {
+        syncRadiusDisplays();
+        scheduleLivePreview();
+      });
       input.addEventListener("change", () => {
         const dimInput = html.querySelector("#al-dim");
         const brightInput = html.querySelector("#al-bright");
@@ -154,6 +170,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, normalizeMaxLightRadiusLimit(rawMax));
         if (dimInput) dimInput.value = String(normalized.dim);
         if (brightInput) brightInput.value = String(normalized.bright);
+        syncRadiusDisplays();
         scheduleLivePreview();
       });
     });
@@ -223,6 +240,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     }
 
     syncRadiusUiConstraints();
+    syncRadiusDisplays();
   }
 }
 
@@ -249,6 +267,39 @@ function normalizeMaxLightRadiusSettingValue(value) {
 function normalizeMaxLightRadiusLimit(value) {
   const normalized = normalizeMaxLightRadiusSettingValue(value);
   return normalized > 0 ? normalized : null;
+}
+
+function getRadiusSliderMax(maxRadius = getConfiguredMaxLightRadius()) {
+  if (Number.isFinite(maxRadius) && maxRadius > 0) return maxRadius;
+  return getSceneSuggestedLightRadiusMax();
+}
+
+function getSceneSuggestedLightRadiusMax() {
+  try {
+    const dims = canvas?.dimensions;
+    const scene = canvas?.scene;
+    const sceneWidthPx = Number(dims?.sceneWidth ?? scene?.width ?? 0);
+    const sceneHeightPx = Number(dims?.sceneHeight ?? scene?.height ?? 0);
+    const gridSizePx = Number(dims?.size ?? scene?.grid?.size ?? 0);
+    const gridDistance = Number(dims?.distance ?? scene?.grid?.distance ?? 0);
+    if (sceneWidthPx > 0 && sceneHeightPx > 0 && gridSizePx > 0 && gridDistance > 0) {
+      const diagonalPx = Math.hypot(sceneWidthPx, sceneHeightPx);
+      const diagonalUnits = (diagonalPx / gridSizePx) * gridDistance;
+      if (Number.isFinite(diagonalUnits) && diagonalUnits > 0) {
+        return Math.max(10, Math.round(diagonalUnits * 10) / 10);
+      }
+    }
+  } catch (_error) {
+    // fallback below
+  }
+  return 200;
+}
+
+function formatRadiusValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "0";
+  const rounded = Math.round(numeric * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
 function clampLightRadius(value, maxRadius = null) {

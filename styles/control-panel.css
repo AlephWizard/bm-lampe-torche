@@ -55,6 +55,26 @@
   min-width: 0;
 }
 
+.al-radius-stack {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.al-range-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.al-range-label {
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
 .al-range-group span {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -100,5 +120,10 @@
 
   .al-input-group {
     grid-template-columns: 1fr 90px;
+  }
+
+  .al-range-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
