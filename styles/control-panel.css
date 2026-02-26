@@ -10,6 +10,12 @@
   width: 100%;
 }
 
+.al-form-note {
+  margin: -4px 0 2px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
 .al-form-group {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);

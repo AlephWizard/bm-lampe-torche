@@ -5,6 +5,7 @@ const GLOBAL_API_KEY = "BmLampeTorche";
 const LIGHT_MODELS_SETTING = "lightModels";
 const TOKEN_BUTTON_SETTING = "tokenButton";
 const LIGHT_ICON_SETTING = "lightIcon";
+const MAX_LIGHT_RADIUS_SETTING = "maxLightRadius";
 
 export const DEFAULT_LIGHT_MODELS = {
   torchLight: {
@@ -95,7 +96,7 @@ Hooks.once("init", async function () {
   console.log(`${MODULE_ID} | registering torch-only settings`);
 
   async function resetTorchPresets() {
-    const lm = foundry.utils.duplicate(DEFAULT_LIGHT_MODELS);
+    const lm = clampAllLightModels(foundry.utils.duplicate(DEFAULT_LIGHT_MODELS));
     await game.settings.set(MODULE_ID, LIGHT_MODELS_SETTING, lm);
 
     if (window[GLOBAL_API_KEY]) {
@@ -144,6 +145,15 @@ Hooks.once("init", async function () {
     default: "feu"
   });
 
+  game.settings.register(MODULE_ID, MAX_LIGHT_RADIUS_SETTING, {
+    name: "Rayon maximal de torche",
+    hint: "Plafond applique aux rayons Tamise/Lumineux (en unites de scene). Mettre 0 pour aucune limite.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 60
+  });
+
   game.settings.registerMenu(MODULE_ID, "openControlPanel", {
     name: game.i18n.localize("agnostic-light.controlPanel.torchSettings"),
     label: game.i18n.localize("agnostic-light.controlPanel.config"),
@@ -165,7 +175,7 @@ Hooks.once("init", async function () {
 
 Hooks.once("ready", async () => {
   const savedLight = foundry.utils.duplicate(game.settings.get(MODULE_ID, LIGHT_MODELS_SETTING) || {});
-  const fixedLight = sanitizeModels(savedLight, DEFAULT_LIGHT_MODELS, { strict: true });
+  const fixedLight = clampAllLightModels(sanitizeModels(savedLight, DEFAULT_LIGHT_MODELS, { strict: true }));
 
   if (!objectsEqual(savedLight, fixedLight)) {
     await game.settings.set(MODULE_ID, LIGHT_MODELS_SETTING, fixedLight);
@@ -178,15 +188,16 @@ Hooks.once("ready", async () => {
     async applyLight(token, lightKey) {
       const preset = this.models[lightKey];
       if (!preset) return;
+      const normalizedPreset = clampLightPreset(preset);
       await token.document.update({
         light: {
-          dim: preset.dim,
-          bright: preset.bright,
-          color: preset.color,
-          angle: preset.angle,
-          alpha: preset.alpha,
-          intensity: preset.intensity,
-          animation: preset.animation
+          dim: normalizedPreset.dim,
+          bright: normalizedPreset.bright,
+          color: normalizedPreset.color,
+          angle: normalizedPreset.angle,
+          alpha: normalizedPreset.alpha,
+          intensity: normalizedPreset.intensity,
+          animation: normalizedPreset.animation
         }
       });
       await token.document.setFlag(MODULE_ID, "lightIconState", "on");
@@ -239,4 +250,37 @@ function sanitizeModels(saved, defaults, { strict = true } = {}) {
     }
   }
   return result;
+}
+
+function getConfiguredMaxLightRadius() {
+  const raw = Number(game.settings?.get?.(MODULE_ID, MAX_LIGHT_RADIUS_SETTING));
+  if (!Number.isFinite(raw)) return null;
+  if (raw <= 0) return null;
+  return raw;
+}
+
+function clampLightRadius(value, maxRadius = null) {
+  const numeric = Number(value);
+  const clampedMin = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+  if (!(Number.isFinite(maxRadius) && maxRadius > 0)) return clampedMin;
+  return Math.min(clampedMin, maxRadius);
+}
+
+function clampLightPreset(preset = {}) {
+  const maxRadius = getConfiguredMaxLightRadius();
+  const dim = clampLightRadius(preset.dim, maxRadius);
+  const bright = clampLightRadius(preset.bright, maxRadius);
+  return {
+    ...preset,
+    dim: Math.max(dim, bright),
+    bright
+  };
+}
+
+function clampAllLightModels(models = {}) {
+  const next = {};
+  for (const [key, model] of Object.entries(models)) {
+    next[key] = clampLightPreset(model);
+  }
+  return next;
 }

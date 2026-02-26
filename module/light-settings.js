@@ -2,6 +2,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const MODULE_ID = "bm-lampe-torche";
 const GLOBAL_API_KEY = "BmLampeTorche";
+const MAX_LIGHT_RADIUS_SETTING = "maxLightRadius";
 
 export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2) {
   static get PARTS() {
@@ -32,23 +33,26 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       key,
       ...model
     }));
+    const maxRadius = getConfiguredMaxLightRadius();
 
     const selectedLightKey = this.options.selectedLightKey || "torchLight";
     const selectedModelRaw = models.find(model => model.key === selectedLightKey) || models[0] || {};
-    const selectedModel = {
+    const selectedModel = clampLightPreset({
       intensity: 0.5,
       dim: 0,
       bright: 0,
       angle: 360,
       color: "#ffffff",
       ...selectedModelRaw
-    };
+    }, maxRadius);
 
     return {
       ...context,
       models,
       selectedLightKey,
-      selectedModel
+      selectedModel,
+      maxRadius: Number.isFinite(maxRadius) ? maxRadius : 9999,
+      maxRadiusEnabled: Number.isFinite(maxRadius) && maxRadius > 0
     };
   }
 
@@ -77,17 +81,18 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       const selectedKey = event.target.value;
       const model = api.models?.[selectedKey];
       if (!model) return;
+      const normalized = clampLightPreset(model);
 
-      html.querySelector("#al-color").value = model.color || "#ffffff";
-      html.querySelector("#al-dim").value = model.dim ?? 0;
-      html.querySelector("#al-bright").value = model.bright ?? 0;
-      html.querySelector("#al-angle").value = model.angle ?? 360;
-      html.querySelector("#al-intensity").value = model.intensity ?? 0.5;
-      html.querySelector("#al-intensity-value").textContent = String(model.intensity ?? 0.5);
+      html.querySelector("#al-color").value = normalized.color || "#ffffff";
+      html.querySelector("#al-dim").value = normalized.dim ?? 0;
+      html.querySelector("#al-bright").value = normalized.bright ?? 0;
+      html.querySelector("#al-angle").value = normalized.angle ?? 360;
+      html.querySelector("#al-intensity").value = normalized.intensity ?? 0.5;
+      html.querySelector("#al-intensity-value").textContent = String(normalized.intensity ?? 0.5);
 
       const animationSelect = html.querySelector("#al-animation");
       if (animationSelect) {
-        animationSelect.value = model.animation?.type || "none";
+        animationSelect.value = normalized.animation?.type || "none";
       }
     });
 
@@ -96,6 +101,16 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         const target = event.target;
         const display = html.querySelector(`#${target.id}-value`);
         if (display) display.textContent = target.value;
+      });
+    });
+
+    html.querySelectorAll("#al-dim, #al-bright").forEach(input => {
+      input.addEventListener("change", () => {
+        const dimInput = html.querySelector("#al-dim");
+        const brightInput = html.querySelector("#al-bright");
+        const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, getConfiguredMaxLightRadius());
+        if (dimInput) dimInput.value = String(normalized.dim);
+        if (brightInput) brightInput.value = String(normalized.bright);
       });
     });
 
@@ -117,11 +132,12 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         return;
       }
 
+      const radii = normalizeLightRadii(data.dim, data.bright, getConfiguredMaxLightRadius());
       const updatedLight = {
         color: data.color,
         intensity: Number.parseFloat(data.intensity),
-        dim: Number.parseInt(data.dim, 10),
-        bright: Number.parseInt(data.bright, 10),
+        dim: radii.dim,
+        bright: radii.bright,
         angle: Number.parseInt(data.angle, 10),
         animation: {
           type: data.animation,
@@ -168,4 +184,36 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
 
 async function saveLightModels(models) {
   await game.settings.set(MODULE_ID, "lightModels", models);
+}
+
+function getConfiguredMaxLightRadius() {
+  const raw = Number(game.settings?.get?.(MODULE_ID, MAX_LIGHT_RADIUS_SETTING));
+  if (!Number.isFinite(raw)) return null;
+  if (raw <= 0) return null;
+  return raw;
+}
+
+function clampLightRadius(value, maxRadius = null) {
+  const numeric = Number(value);
+  const base = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+  if (!(Number.isFinite(maxRadius) && maxRadius > 0)) return base;
+  return Math.min(base, maxRadius);
+}
+
+function normalizeLightRadii(dimValue, brightValue, maxRadius = null) {
+  const dim = clampLightRadius(dimValue, maxRadius);
+  const bright = clampLightRadius(brightValue, maxRadius);
+  return {
+    dim: Math.max(dim, bright),
+    bright
+  };
+}
+
+function clampLightPreset(model = {}, maxRadius = getConfiguredMaxLightRadius()) {
+  const radii = normalizeLightRadii(model.dim, model.bright, maxRadius);
+  return {
+    ...model,
+    dim: radii.dim,
+    bright: radii.bright
+  };
 }
