@@ -1,0 +1,67 @@
+{
+  "id": "bm-lampe-torche",
+  "title": "BM Lampe Torche",
+  "version": "1.0.9",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13.348"
+  },
+  "description": "Module Foundry dedie a la gestion de la torche sur les tokens (allumage/extinction et presets internes), sans panneaux rapides lumiere/vision.",
+  "authors": [
+    {
+      "name": "Jello195",
+      "flags": {}
+    },
+    {
+      "name": "AbelGuillouet&Codex",
+      "flags": {}
+    }
+  ],
+  "esmodules": [
+    "module/control-panel.js",
+    "module/ui.js"
+  ],
+  "styles": [],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json",
+      "flags": {}
+    },
+    {
+      "lang": "fr",
+      "name": "Français",
+      "path": "lang/fr.json",
+      "flags": {}
+    },
+    {
+      "lang": "de",
+      "name": "Deutsch",
+      "path": "lang/de.json",
+      "flags": {}
+    },
+    {
+      "lang": "it",
+      "name": "Italiano",
+      "path": "lang/it.json",
+      "flags": {}
+    },
+    {
+      "lang": "es",
+      "name": "Español",
+      "path": "lang/es.json",
+      "flags": {}
+    },
+    {
+      "lang": "ru",
+      "name": "Русский",
+      "path": "lang/ru.json",
+      "flags": {}
+    }
+  ],
+  "url": "https://github.com/AlephWizard/bm-lampe-torche",
+  "manifest": "https://raw.githubusercontent.com/AlephWizard/bm-lampe-torche/main/module.json",
+  "download": "https://github.com/AlephWizard/bm-lampe-torche/archive/refs/heads/main.zip",
+  "flags": {}
+}
