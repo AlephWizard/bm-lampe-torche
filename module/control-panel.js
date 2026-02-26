@@ -276,10 +276,22 @@ function clampLightPreset(preset = {}) {
   const maxRadius = getConfiguredMaxLightRadius();
   const dim = clampLightRadius(preset.dim, maxRadius);
   const bright = clampLightRadius(preset.bright, maxRadius);
+  const animationType = normalizeAnimationType(preset.animation?.type);
   return {
     ...preset,
     dim: Math.max(dim, bright),
-    bright
+    bright,
+    color: normalizeColorValue(preset.color, "#ffffff"),
+    angle: Math.round(clampNumber(preset.angle, 0, 360, 360)),
+    alpha: clampNumber(preset.alpha, 0, 1, 0.5),
+    intensity: clampNumber(preset.intensity, 0, 1, 0.5),
+    animation: animationType
+      ? {
+          type: animationType,
+          speed: Math.round(clampNumber(preset.animation?.speed, 0, 10, 3)),
+          intensity: Math.round(clampNumber(preset.animation?.intensity, 0, 10, 3))
+        }
+      : { type: null }
   };
 }
 
@@ -289,4 +301,25 @@ function clampAllLightModels(models = {}) {
     next[key] = clampLightPreset(model);
   }
   return next;
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+  const safe = Number.isFinite(numeric) ? numeric : fallback;
+  if (!Number.isFinite(safe)) return fallback;
+  return Math.min(Math.max(safe, min), max);
+}
+
+function normalizeColorValue(value, fallback = "#ffffff") {
+  const candidate = String(value ?? "").trim();
+  if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(candidate)) return candidate;
+  return fallback;
+}
+
+function normalizeAnimationType(value) {
+  const candidate = String(value ?? "").trim();
+  if (!candidate || candidate === "none") return null;
+  const animations = CONFIG?.Canvas?.lightAnimations || {};
+  if (!Object.keys(animations).length) return candidate;
+  return Object.prototype.hasOwnProperty.call(animations, candidate) ? candidate : null;
 }

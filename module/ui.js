@@ -1,5 +1,6 @@
 const MODULE_ID = "bm-lampe-torche";
 const GLOBAL_API_KEY = "BmLampeTorche";
+const TOKEN_TOGGLE_PENDING = new Set();
 
 Hooks.on("renderTokenHUD", (hud, html, data) => {
   const tokenButtonEnabled = game.settings.get(MODULE_ID, "tokenButton");
@@ -24,14 +25,20 @@ Hooks.on("renderTokenHUD", (hud, html, data) => {
     offButton = createHudButton("fa-solid fa-moon", onDisplay);
   }
 
-  onButton.addEventListener("click", () => {
-    lightson(data._id);
-    token.document.setFlag(MODULE_ID, "lightIconState", "on");
+  onButton.addEventListener("click", async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    await runTokenToggleAction(data._id, async () => {
+      await lightson(data._id);
+    });
   });
 
-  offButton.addEventListener("click", () => {
-    lightsoff(data._id);
-    token.document.setFlag(MODULE_ID, "lightIconState", "off");
+  offButton.addEventListener("click", async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    await runTokenToggleAction(data._id, async () => {
+      await lightsoff(data._id);
+    });
   });
 
   const openPanelFromHud = ev => {
@@ -59,9 +66,10 @@ function createHudButton(iconClass, displayStyle) {
   return div;
 }
 
-function backupTokensLight(token) {
+async function backupTokensLight(token) {
   const state = token.document.getFlag(MODULE_ID, "lightIconState") || "off";
   if (state !== "off") return;
+  if (token.document.getFlag(MODULE_ID, "base_light")) return;
 
   const currentLight = token.document.light ?? {};
   const oldLight = {
@@ -75,10 +83,10 @@ function backupTokensLight(token) {
       type: currentLight.animation?.type
     }
   };
-  token.document.setFlag(MODULE_ID, "base_light", oldLight);
+  await token.document.setFlag(MODULE_ID, "base_light", oldLight);
 }
 
-function lightsoff(tokenId) {
+async function lightsoff(tokenId) {
   const token = canvas.tokens.get(tokenId);
   if (!token) {
     console.error(`${MODULE_ID} | Token with ID ${tokenId} not found.`);
@@ -86,14 +94,19 @@ function lightsoff(tokenId) {
   }
 
   try {
-    window[GLOBAL_API_KEY]?.resetLight?.(token);
+    const api = window[GLOBAL_API_KEY];
+    if (!api?.resetLight) {
+      console.warn(`${MODULE_ID} | API resetLight indisponible.`);
+      return;
+    }
+    await api.resetLight(token);
     console.log(`${MODULE_ID} | light off`);
   } catch (error) {
     console.error(`${MODULE_ID} | Error resetting light for token:`, error);
   }
 }
 
-function lightson(tokenId, defaultModel = "torchLight") {
+async function lightson(tokenId, defaultModel = "torchLight") {
   const token = canvas.tokens.get(tokenId);
   if (!token) {
     console.error(`${MODULE_ID} | Token with ID ${tokenId} not found.`);
@@ -103,10 +116,15 @@ function lightson(tokenId, defaultModel = "torchLight") {
   let chosenModel = token.document.getFlag(MODULE_ID, "chosenModel");
   if (!chosenModel) chosenModel = defaultModel;
 
-  backupTokensLight(token);
+  await backupTokensLight(token);
 
   try {
-    window[GLOBAL_API_KEY]?.applyLight?.(token, chosenModel);
+    const api = window[GLOBAL_API_KEY];
+    if (!api?.applyLight) {
+      console.warn(`${MODULE_ID} | API applyLight indisponible.`);
+      return;
+    }
+    await api.applyLight(token, chosenModel);
     console.log(`${MODULE_ID} | light on with settings from ${chosenModel}`);
   } catch (error) {
     console.error(`${MODULE_ID} | Error applying light for token:`, error);
@@ -128,5 +146,18 @@ function openTorchControlPanelForToken(token) {
     }
   } catch (error) {
     console.error(`${MODULE_ID} | Error opening control panel for token:`, error);
+  }
+}
+
+async function runTokenToggleAction(tokenId, action) {
+  const key = String(tokenId || "").trim();
+  if (!key || typeof action !== "function") return;
+  if (TOKEN_TOGGLE_PENDING.has(key)) return;
+
+  TOKEN_TOGGLE_PENDING.add(key);
+  try {
+    await action();
+  } finally {
+    TOKEN_TOGGLE_PENDING.delete(key);
   }
 }

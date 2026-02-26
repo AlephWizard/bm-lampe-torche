@@ -3,6 +3,8 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const MODULE_ID = "bm-lampe-torche";
 const GLOBAL_API_KEY = "BmLampeTorche";
 const MAX_LIGHT_RADIUS_SETTING = "maxLightRadius";
+const LIVE_PREVIEW_DEBOUNCE_MS = 120;
+const BASE_LIGHT_BACKUP_PENDING = new WeakSet();
 
 export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2) {
   static get PARTS() {
@@ -79,14 +81,13 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   activateListeners(html) {
-    let previewTimer = null;
     const scheduleLivePreview = () => {
       if (this.options?.applyOnSave !== true && !this.options?.tokenId) return;
-      if (previewTimer) clearTimeout(previewTimer);
-      previewTimer = setTimeout(() => {
-        previewTimer = null;
-        void applyCurrentFormPreviewToTargets.call(this);
-      }, 120);
+      if (this._alPreviewTimer) clearTimeout(this._alPreviewTimer);
+      this._alPreviewTimer = setTimeout(() => {
+        this._alPreviewTimer = null;
+        void queueLivePreviewToTargets.call(this);
+      }, LIVE_PREVIEW_DEBOUNCE_MS);
     };
 
     const syncRadiusUiConstraints = () => {
@@ -101,7 +102,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       if (note) {
         note.textContent = (rawMax > 0)
           ? `Rayon max applique : ${effectiveMax} (mettre 0 pour illimite)`
-          : `Rayon max illimite (0) • curseurs bornes par la scene (${sliderMax})`;
+          : `Rayon max illimite (0) - curseurs bornes par la scene (${sliderMax})`;
       }
       syncRadiusDisplays();
     };
@@ -179,34 +180,38 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
     html.querySelector("#al-angle")?.addEventListener("input", scheduleLivePreview);
     html.querySelector("#al-animation")?.addEventListener("change", scheduleLivePreview);
 
-    html.querySelector(".al-submit-button")?.addEventListener("click", async () => {
+    html.querySelector(".al-submit-button")?.addEventListener("click", async event => {
+      if (this._alSaveInFlight) return;
       const api = window[GLOBAL_API_KEY] || { models: {} };
       const form = this.element.querySelector("form");
       if (!form) return;
-
-      const lightSelect = form.querySelector("#light-select");
-      const selectedKey = lightSelect?.value;
-      const modelData = foundry.utils.duplicate(api.models?.[selectedKey] ?? {});
-
-      if (!selectedKey || !modelData) {
-        ui.notifications.error("BM Lampe Torche | Modele introuvable.");
-        return;
-      }
-
-      const formLightConfig = readPanelFormLightConfig(form, modelData);
-      if (!formLightConfig) return;
-
-      const requestedMaxRadius = formLightConfig.requestedMaxRadius;
-      const effectiveMaxRadius = formLightConfig.effectiveMaxRadius;
-      const currentMaxRadiusRaw = getRawConfiguredMaxLightRadius();
-      if (requestedMaxRadius !== currentMaxRadiusRaw) {
-        await game.settings.set(MODULE_ID, MAX_LIGHT_RADIUS_SETTING, requestedMaxRadius);
-      }
-
-      api.models[selectedKey] = foundry.utils.mergeObject(modelData, formLightConfig.light, { overwrite: true });
-      api.models = clampAllLightModels(api.models, effectiveMaxRadius);
+      const saveButton = event.currentTarget;
+      this._alSaveInFlight = true;
+      if (saveButton) saveButton.disabled = true;
 
       try {
+        const lightSelect = form.querySelector("#light-select");
+        const selectedKey = String(lightSelect?.value || "").trim();
+        const modelData = foundry.utils.duplicate(api.models?.[selectedKey] ?? {});
+
+        if (!selectedKey || !modelData) {
+          ui.notifications.error("BM Lampe Torche | Modele introuvable.");
+          return;
+        }
+
+        const formLightConfig = readPanelFormLightConfig(form, modelData);
+        if (!formLightConfig) return;
+
+        const requestedMaxRadius = formLightConfig.requestedMaxRadius;
+        const effectiveMaxRadius = formLightConfig.effectiveMaxRadius;
+        const currentMaxRadiusRaw = getRawConfiguredMaxLightRadius();
+        if (requestedMaxRadius !== currentMaxRadiusRaw) {
+          await game.settings.set(MODULE_ID, MAX_LIGHT_RADIUS_SETTING, requestedMaxRadius);
+        }
+
+        api.models[selectedKey] = foundry.utils.mergeObject(modelData, formLightConfig.light, { overwrite: true });
+        api.models = clampAllLightModels(api.models, effectiveMaxRadius);
+
         await saveLightModels(api.models);
         await applyPresetToTargetsOnSave.call(this, selectedKey);
 
@@ -218,6 +223,9 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       } catch (error) {
         console.error("BM Lampe Torche | Erreur lors de la sauvegarde :", error);
         ui.notifications.error("BM Lampe Torche | Echec de la sauvegarde.");
+      } finally {
+        this._alSaveInFlight = false;
+        if (saveButton) saveButton.disabled = false;
       }
     });
 
@@ -246,6 +254,22 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
 
 async function saveLightModels(models) {
   await game.settings.set(MODULE_ID, "lightModels", models);
+}
+
+async function queueLivePreviewToTargets() {
+  if (this._alSaveInFlight) return;
+  this._alPreviewRequested = true;
+  if (this._alPreviewRunning) return;
+
+  this._alPreviewRunning = true;
+  try {
+    while (this._alPreviewRequested) {
+      this._alPreviewRequested = false;
+      await applyCurrentFormPreviewToTargets.call(this);
+    }
+  } finally {
+    this._alPreviewRunning = false;
+  }
 }
 
 function getRawConfiguredMaxLightRadius() {
@@ -343,8 +367,11 @@ async function applyPresetToTargetsOnSave(selectedKey) {
 
   for (const token of targetTokens) {
     try {
-      ensureTokenBaseLightBackup(token);
-      await token.document.setFlag(MODULE_ID, "chosenModel", selectedKey);
+      await ensureTokenBaseLightBackup(token);
+      const currentChosen = token.document.getFlag(MODULE_ID, "chosenModel");
+      if (currentChosen !== selectedKey) {
+        await token.document.setFlag(MODULE_ID, "chosenModel", selectedKey);
+      }
       await api.applyLight(token, selectedKey);
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to apply preset "${selectedKey}" on save`, error);
@@ -366,14 +393,32 @@ async function applyCurrentFormPreviewToTargets() {
   if (!formLightConfig?.light) return;
 
   const targetTokens = getTargetTokensFromPanelOptions(this?.options);
+  if (!targetTokens.length) return;
+
+  const previewSignature = buildLivePreviewSignature({
+    selectedKey,
+    targetTokens,
+    requestedMaxRadius: formLightConfig.requestedMaxRadius,
+    light: formLightConfig.light
+  });
+  if (this._alLastPreviewSignature === previewSignature) return;
+
+  let appliedCount = 0;
   for (const token of targetTokens) {
     try {
-      ensureTokenBaseLightBackup(token);
+      await ensureTokenBaseLightBackup(token);
       await token.document.update({ light: formLightConfig.light });
-      await token.document.setFlag(MODULE_ID, "lightIconState", "on");
+      const iconState = token.document.getFlag(MODULE_ID, "lightIconState") || "off";
+      if (iconState !== "on") {
+        await token.document.setFlag(MODULE_ID, "lightIconState", "on");
+      }
+      appliedCount += 1;
     } catch (error) {
       console.warn(`${MODULE_ID} | live preview update failed`, error);
     }
+  }
+  if (appliedCount > 0) {
+    this._alLastPreviewSignature = previewSignature;
   }
 }
 
@@ -386,22 +431,21 @@ function readPanelFormLightConfig(form, modelData = {}) {
   const requestedMaxRadius = normalizeMaxLightRadiusSettingValue(data.maxLightRadius);
   const effectiveMaxRadius = normalizeMaxLightRadiusLimit(requestedMaxRadius);
   const radii = normalizeLightRadii(data.dim, data.bright, effectiveMaxRadius);
+  const fallbackIntensity = clampNumber(modelData.intensity, 0, 1, 0.5);
+  const fallbackAngle = Math.round(clampNumber(modelData.angle, 0, 360, 360));
+  const animationType = normalizeAnimationType(data.animation);
 
   return {
     requestedMaxRadius,
     effectiveMaxRadius,
     light: {
-      color: data.color || modelData.color || "#ffffff",
-      intensity: Number.parseFloat(data.intensity),
+      color: normalizeColorValue(data.color, modelData.color || "#ffffff"),
+      intensity: clampNumber(data.intensity, 0, 1, fallbackIntensity),
       dim: radii.dim,
       bright: radii.bright,
-      angle: Number.parseInt(data.angle, 10),
-      alpha: modelData.alpha,
-      animation: {
-        type: data.animation,
-        speed: modelData.animation?.speed ?? 3,
-        intensity: modelData.animation?.intensity ?? 3
-      }
+      angle: Math.round(clampNumber(data.angle, 0, 360, fallbackAngle)),
+      alpha: clampNumber(modelData.alpha, 0, 1, 0.5),
+      animation: buildAnimationPayload(modelData.animation, animationType)
     }
   };
 }
@@ -427,9 +471,10 @@ function getTargetTokensFromPanelOptions(options = {}) {
   return targetTokens;
 }
 
-function ensureTokenBaseLightBackup(token) {
+async function ensureTokenBaseLightBackup(token) {
   const tokenDocument = token?.document || token;
   if (!tokenDocument?.getFlag || !tokenDocument?.setFlag) return;
+  if (BASE_LIGHT_BACKUP_PENDING.has(tokenDocument)) return;
   const state = tokenDocument.getFlag(MODULE_ID, "lightIconState") || "off";
   if (state !== "off") return;
   const alreadyBackedUp = tokenDocument.getFlag(MODULE_ID, "base_light");
@@ -445,5 +490,62 @@ function ensureTokenBaseLightBackup(token) {
     intensity: currentLight.intensity,
     animation: { type: currentLight.animation?.type }
   };
-  tokenDocument.setFlag(MODULE_ID, "base_light", oldLight);
+  BASE_LIGHT_BACKUP_PENDING.add(tokenDocument);
+  try {
+    await tokenDocument.setFlag(MODULE_ID, "base_light", oldLight);
+  } finally {
+    BASE_LIGHT_BACKUP_PENDING.delete(tokenDocument);
+  }
+}
+
+function buildLivePreviewSignature({ selectedKey, targetTokens, requestedMaxRadius, light }) {
+  const tokenIds = targetTokens
+    .map(token => String(token?.id || token?.document?.id || ""))
+    .filter(Boolean)
+    .sort();
+
+  return JSON.stringify({
+    selectedKey,
+    tokenIds,
+    requestedMaxRadius,
+    light: {
+      color: light?.color ?? null,
+      intensity: light?.intensity ?? null,
+      dim: light?.dim ?? null,
+      bright: light?.bright ?? null,
+      angle: light?.angle ?? null,
+      alpha: light?.alpha ?? null,
+      animationType: light?.animation?.type ?? null
+    }
+  });
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+  const safe = Number.isFinite(numeric) ? numeric : fallback;
+  if (!Number.isFinite(safe)) return fallback;
+  return Math.min(Math.max(safe, min), max);
+}
+
+function normalizeColorValue(value, fallback = "#ffffff") {
+  const candidate = String(value ?? "").trim();
+  if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(candidate)) return candidate;
+  return fallback;
+}
+
+function normalizeAnimationType(value) {
+  const candidate = String(value ?? "").trim();
+  if (!candidate || candidate === "none") return null;
+  const animations = CONFIG?.Canvas?.lightAnimations || {};
+  if (!Object.keys(animations).length) return candidate;
+  return Object.prototype.hasOwnProperty.call(animations, candidate) ? candidate : null;
+}
+
+function buildAnimationPayload(modelAnimation = {}, animationType = null) {
+  if (!animationType) return { type: null };
+  return {
+    type: animationType,
+    speed: Math.round(clampNumber(modelAnimation?.speed, 0, 10, 3)),
+    intensity: Math.round(clampNumber(modelAnimation?.intensity, 0, 10, 3))
+  };
 }
