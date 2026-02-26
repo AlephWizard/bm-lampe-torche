@@ -78,6 +78,16 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   activateListeners(html) {
+    let previewTimer = null;
+    const scheduleLivePreview = () => {
+      if (this.options?.applyOnSave !== true && !this.options?.tokenId) return;
+      if (previewTimer) clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        previewTimer = null;
+        void applyCurrentFormPreviewToTargets.call(this);
+      }, 120);
+    };
+
     const syncRadiusUiConstraints = () => {
       const rawMax = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
       const effectiveMax = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 9999;
@@ -111,6 +121,8 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       if (animationSelect) {
         animationSelect.value = normalized.animation?.type || "none";
       }
+
+      scheduleLivePreview();
     });
 
     html.querySelectorAll("input[type='range']").forEach(input => {
@@ -118,6 +130,7 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         const target = event.target;
         const display = html.querySelector(`#${target.id}-value`);
         if (display) display.textContent = target.value;
+        scheduleLivePreview();
       });
     });
 
@@ -129,9 +142,11 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, normalizeMaxLightRadiusLimit(maxRadius));
       if (dimInput) dimInput.value = String(normalized.dim);
       if (brightInput) brightInput.value = String(normalized.bright);
+      scheduleLivePreview();
     });
 
     html.querySelectorAll("#al-dim, #al-bright").forEach(input => {
+      input.addEventListener("input", scheduleLivePreview);
       input.addEventListener("change", () => {
         const dimInput = html.querySelector("#al-dim");
         const brightInput = html.querySelector("#al-bright");
@@ -139,17 +154,18 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, normalizeMaxLightRadiusLimit(rawMax));
         if (dimInput) dimInput.value = String(normalized.dim);
         if (brightInput) brightInput.value = String(normalized.bright);
+        scheduleLivePreview();
       });
     });
+
+    html.querySelector("#al-color")?.addEventListener("input", scheduleLivePreview);
+    html.querySelector("#al-angle")?.addEventListener("input", scheduleLivePreview);
+    html.querySelector("#al-animation")?.addEventListener("change", scheduleLivePreview);
 
     html.querySelector(".al-submit-button")?.addEventListener("click", async () => {
       const api = window[GLOBAL_API_KEY] || { models: {} };
       const form = this.element.querySelector("form");
       if (!form) return;
-
-      const formData = new FormData(form);
-      const flatData = Object.fromEntries(formData.entries());
-      const data = foundry.utils.expandObject(flatData);
 
       const lightSelect = form.querySelector("#light-select");
       const selectedKey = lightSelect?.value;
@@ -160,28 +176,17 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         return;
       }
 
-      const requestedMaxRadius = normalizeMaxLightRadiusSettingValue(data.maxLightRadius);
-      const effectiveMaxRadius = normalizeMaxLightRadiusLimit(requestedMaxRadius);
+      const formLightConfig = readPanelFormLightConfig(form, modelData);
+      if (!formLightConfig) return;
+
+      const requestedMaxRadius = formLightConfig.requestedMaxRadius;
+      const effectiveMaxRadius = formLightConfig.effectiveMaxRadius;
       const currentMaxRadiusRaw = getRawConfiguredMaxLightRadius();
       if (requestedMaxRadius !== currentMaxRadiusRaw) {
         await game.settings.set(MODULE_ID, MAX_LIGHT_RADIUS_SETTING, requestedMaxRadius);
       }
 
-      const radii = normalizeLightRadii(data.dim, data.bright, effectiveMaxRadius);
-      const updatedLight = {
-        color: data.color,
-        intensity: Number.parseFloat(data.intensity),
-        dim: radii.dim,
-        bright: radii.bright,
-        angle: Number.parseInt(data.angle, 10),
-        animation: {
-          type: data.animation,
-          speed: modelData.animation?.speed ?? 3,
-          intensity: modelData.animation?.intensity ?? 3
-        }
-      };
-
-      api.models[selectedKey] = foundry.utils.mergeObject(modelData, updatedLight, { overwrite: true });
+      api.models[selectedKey] = foundry.utils.mergeObject(modelData, formLightConfig.light, { overwrite: true });
       api.models = clampAllLightModels(api.models, effectiveMaxRadius);
 
       try {
@@ -282,10 +287,78 @@ function clampAllLightModels(models = {}, maxRadius = getConfiguredMaxLightRadiu
 async function applyPresetToTargetsOnSave(selectedKey) {
   const api = window[GLOBAL_API_KEY];
   if (!api?.applyLight) return;
+  const targetTokens = getTargetTokensFromPanelOptions(this?.options);
+  if (!targetTokens.length) return;
 
+  for (const token of targetTokens) {
+    try {
+      ensureTokenBaseLightBackup(token);
+      await token.document.setFlag(MODULE_ID, "chosenModel", selectedKey);
+      await api.applyLight(token, selectedKey);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | failed to apply preset "${selectedKey}" on save`, error);
+    }
+  }
+}
+
+async function applyCurrentFormPreviewToTargets() {
+  const form = this.element?.querySelector?.("form");
+  if (!form) return;
+  const selectedKey = String(form.querySelector("#light-select")?.value || "").trim();
+  if (!selectedKey) return;
+
+  const api = window[GLOBAL_API_KEY] || { models: {} };
+  const modelData = foundry.utils.duplicate(api.models?.[selectedKey] ?? {});
+  if (!modelData) return;
+
+  const formLightConfig = readPanelFormLightConfig(form, modelData);
+  if (!formLightConfig?.light) return;
+
+  const targetTokens = getTargetTokensFromPanelOptions(this?.options);
+  for (const token of targetTokens) {
+    try {
+      ensureTokenBaseLightBackup(token);
+      await token.document.update({ light: formLightConfig.light });
+      await token.document.setFlag(MODULE_ID, "lightIconState", "on");
+    } catch (error) {
+      console.warn(`${MODULE_ID} | live preview update failed`, error);
+    }
+  }
+}
+
+function readPanelFormLightConfig(form, modelData = {}) {
+  if (!form) return null;
+  const formData = new FormData(form);
+  const flatData = Object.fromEntries(formData.entries());
+  const data = foundry.utils.expandObject(flatData);
+
+  const requestedMaxRadius = normalizeMaxLightRadiusSettingValue(data.maxLightRadius);
+  const effectiveMaxRadius = normalizeMaxLightRadiusLimit(requestedMaxRadius);
+  const radii = normalizeLightRadii(data.dim, data.bright, effectiveMaxRadius);
+
+  return {
+    requestedMaxRadius,
+    effectiveMaxRadius,
+    light: {
+      color: data.color || modelData.color || "#ffffff",
+      intensity: Number.parseFloat(data.intensity),
+      dim: radii.dim,
+      bright: radii.bright,
+      angle: Number.parseInt(data.angle, 10),
+      alpha: modelData.alpha,
+      animation: {
+        type: data.animation,
+        speed: modelData.animation?.speed ?? 3,
+        intensity: modelData.animation?.intensity ?? 3
+      }
+    }
+  };
+}
+
+function getTargetTokensFromPanelOptions(options = {}) {
   const targetTokens = [];
   const seen = new Set();
-  const optionTokenId = String(this?.options?.tokenId || "").trim();
+  const optionTokenId = String(options?.tokenId || "").trim();
   if (optionTokenId) {
     const token = canvas?.tokens?.get?.(optionTokenId);
     if (token?.document) {
@@ -300,15 +373,26 @@ async function applyPresetToTargetsOnSave(selectedKey) {
     targetTokens.push(token);
     seen.add(tokenId);
   }
+  return targetTokens;
+}
 
-  if (!targetTokens.length) return;
+function ensureTokenBaseLightBackup(token) {
+  const tokenDocument = token?.document || token;
+  if (!tokenDocument?.getFlag || !tokenDocument?.setFlag) return;
+  const state = tokenDocument.getFlag(MODULE_ID, "lightIconState") || "off";
+  if (state !== "off") return;
+  const alreadyBackedUp = tokenDocument.getFlag(MODULE_ID, "base_light");
+  if (alreadyBackedUp) return;
 
-  for (const token of targetTokens) {
-    try {
-      await token.document.setFlag(MODULE_ID, "chosenModel", selectedKey);
-      await api.applyLight(token, selectedKey);
-    } catch (error) {
-      console.warn(`${MODULE_ID} | failed to apply preset "${selectedKey}" on save`, error);
-    }
-  }
+  const currentLight = tokenDocument.light ?? {};
+  const oldLight = {
+    bright: currentLight.bright,
+    dim: currentLight.dim,
+    angle: currentLight.angle,
+    color: currentLight.color,
+    alpha: currentLight.alpha,
+    intensity: currentLight.intensity,
+    animation: { type: currentLight.animation?.type }
+  };
+  tokenDocument.setFlag(MODULE_ID, "base_light", oldLight);
 }
