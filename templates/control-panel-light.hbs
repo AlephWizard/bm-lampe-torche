@@ -16,46 +16,19 @@
   </div>
 
   <div class="al-form-group">
-    <label for="al-max-radius">Rayon max (map)</label>
-    <input type="number" id="al-max-radius" name="maxLightRadius" min="0" step="0.01" value="{{maxLightRadiusValue}}" />
-  </div>
-
-  <div class="al-form-group">
-    <label for="al-intensity">{{localize "agnostic-light.controlPanel.intensity"}}</label>
+    <label for="al-simple-range">{{localize "agnostic-light.controlPanel.mapRange"}}</label>
     <div class="al-range-group">
-      <input type="range" id="al-intensity" name="intensity" min="0" max="1" step="0.05" value="{{selectedModel.intensity}}" />
-      <span id="al-intensity-value">{{selectedModel.intensity}}</span>
+      <input type="range" id="al-simple-range" min="0" max="{{radiusSliderMax}}" step="0.1" value="{{selectedModel.dim}}" />
+      <span id="al-simple-range-value">{{selectedModel.dim}}</span>
     </div>
   </div>
 
   <div class="al-form-group">
-    <label for="al-radius">{{localize "agnostic-light.controlPanel.radius"}}</label>
-    <div class="al-radius-stack">
-      <div class="al-range-row">
-        <span class="al-range-label">{{localize "LIGHT.FIELDS.dim.label"}}</span>
-        <div class="al-range-group">
-          <input type="range" id="al-dim" name="dim" min="0" max="{{radiusSliderMax}}" step="0.1" value="{{selectedModel.dim}}" />
-          <span id="al-dim-value">{{selectedModel.dim}}</span>
-        </div>
-      </div>
-      <div class="al-range-row">
-        <span class="al-range-label">{{localize "LIGHT.FIELDS.bright.label"}}</span>
-        <div class="al-range-group">
-          <input type="range" id="al-bright" name="bright" min="0" max="{{radiusSliderMax}}" step="0.1" value="{{selectedModel.bright}}" />
-          <span id="al-bright-value">{{selectedModel.bright}}</span>
-        </div>
-      </div>
+    <label for="al-simple-angle">{{localize "agnostic-light.controlPanel.beamAngle"}}</label>
+    <div class="al-range-group">
+      <input type="range" id="al-simple-angle" min="0" max="360" step="1" value="{{selectedModel.angle}}" />
+      <span id="al-simple-angle-value">{{selectedModel.angle}}</span>
     </div>
-  </div>
-  {{#if maxRadiusEnabled}}
-  <p class="al-form-note">Rayon max applique : {{effectiveMaxRadius}} (mettre 0 pour illimite)</p>
-  {{else}}
-  <p class="al-form-note">Rayon max illimite (0)</p>
-  {{/if}}
-
-  <div class="al-form-group">
-    <label for="al-angle">{{localize "LIGHT.FIELDS.angle.label"}}</label>
-    <input type="number" id="al-angle" name="angle" min="0" max="360" value="{{selectedModel.angle}}" />
   </div>
 
   <div class="al-form-group">
@@ -63,5 +36,16 @@
     <select id="al-animation" name="animation"></select>
   </div>
 
-  <button type="button" class="al-submit-button">{{localize "agnostic-light.controlPanel.save"}}</button>
+  <p class="al-form-note">{{localize "agnostic-light.controlPanel.simpleHint"}}</p>
+
+  <input type="hidden" id="al-max-radius" name="maxLightRadius" value="{{maxLightRadiusValue}}" />
+  <input type="hidden" id="al-intensity" name="intensity" value="{{selectedModel.intensity}}" />
+  <input type="hidden" id="al-dim" name="dim" value="{{selectedModel.dim}}" />
+  <input type="hidden" id="al-bright" name="bright" value="{{selectedModel.bright}}" />
+  <input type="hidden" id="al-angle" name="angle" value="{{selectedModel.angle}}" />
+
+  <div class="al-actions">
+    <button type="button" class="al-cancel-button">{{localize "agnostic-light.controlPanel.cancelEdits"}}</button>
+    <button type="button" class="al-submit-button">{{localize "agnostic-light.controlPanel.save"}}</button>
+  </div>
 </form>

@@ -11,80 +11,22 @@ const MAX_LIGHT_RADIUS_SETTING = "maxLightRadius";
 export const DEFAULT_LIGHT_MODELS = {
   torchLight: {
     name: "agnostic-light.ui.torchLight",
-    dim: 12,
-    bright: 6,
-    color: "#fab87a",
+    dim: 1.5,
+    bright: 1.5,
+    color: "#ff9a3c",
     angle: 360,
     alpha: 0.5,
-    animation: { type: "flame", speed: 5, intensity: 5 }
+    animation: { type: null },
+    intensity: 0.5
   },
   lamp: {
     name: "agnostic-light.ui.lamp",
-    dim: 12,
-    bright: 9,
-    color: "#ffa200",
-    angle: 360,
+    dim: 2,
+    bright: 2,
+    color: "#ffffff",
+    angle: 60,
     alpha: 0.5,
-    animation: { type: "torch", speed: 3, intensity: 3 }
-  },
-  bullseye: {
-    name: "agnostic-light.ui.bullseye",
-    dim: 24,
-    bright: 18,
-    color: "#ffa200",
-    angle: 45,
-    alpha: 0.5,
-    animation: { type: "torch", speed: 3, intensity: 3 },
-    intensity: 0.5
-  },
-  hoodedOpen: {
-    name: "agnostic-light.ui.hoodedOpen",
-    dim: 24,
-    bright: 10,
-    color: "#ffa200",
-    angle: 360,
-    alpha: 0.5,
-    animation: { type: "torch", speed: 3, intensity: 3 },
-    intensity: 0.5
-  },
-  hoodedClosed: {
-    name: "agnostic-light.ui.hoodedClosed",
-    dim: 5,
-    bright: 0,
-    color: "#ffa200",
-    angle: 360,
-    alpha: 0.5,
-    animation: { type: "torch", speed: 3, intensity: 3 },
-    intensity: 0.5
-  },
-  lightcantrip: {
-    name: "agnostic-light.ui.lightcantrip",
-    dim: 14,
-    bright: 7,
-    color: "#fffab8",
-    angle: 360,
-    alpha: 0.5,
-    animation: { type: "torch", speed: 2, intensity: 1 },
-    intensity: 0.5
-  },
-  moontouched: {
-    name: "agnostic-light.ui.moontouched",
-    dim: 30,
-    bright: 15,
-    color: "#38c0f3",
-    angle: 360,
-    alpha: 0.5,
-    animation: { type: "torch", speed: 1, intensity: 1 },
-    intensity: 0.5
-  },
-  sunlight: {
-    name: "agnostic-light.ui.sunlight",
-    dim: 60,
-    bright: 30,
-    color: "#fff45c",
-    angle: 360,
-    alpha: 0.6,
-    animation: { type: "torch", speed: 1, intensity: 5 },
+    animation: { type: null },
     intensity: 0.5
   }
 };

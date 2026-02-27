@@ -99,7 +99,24 @@
 
 .al-submit-button {
   width: 100%;
+}
+
+.al-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   margin-top: 4px;
+}
+
+.al-cancel-button {
+  width: 100%;
+}
+
+.al-form button:focus-visible,
+.al-form input:focus-visible,
+.al-form select:focus-visible {
+  outline: 2px solid var(--color-warm-2);
+  outline-offset: 1px;
 }
 
 .flash-save {
@@ -113,6 +130,10 @@
 }
 
 @media (max-width: 560px) {
+  .al-actions {
+    grid-template-columns: 1fr;
+  }
+
   .al-form-group {
     grid-template-columns: 1fr;
     align-items: start;

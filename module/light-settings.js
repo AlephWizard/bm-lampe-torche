@@ -5,6 +5,7 @@ const GLOBAL_API_KEY = "BmLampeTorche";
 const MAX_LIGHT_RADIUS_SETTING = "maxLightRadius";
 const LIVE_PREVIEW_DEBOUNCE_MS = 120;
 const BASE_LIGHT_BACKUP_PENDING = new WeakSet();
+const SIMPLE_LIGHT_KEYS = new Set(["torchLight", "lamp"]);
 
 export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2) {
   static get PARTS() {
@@ -31,14 +32,16 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
 
   _prepareContext(context) {
     const api = window[GLOBAL_API_KEY] || { models: {} };
-    const models = Object.entries(api.models || {}).map(([key, model]) => ({
-      key,
-      ...model
-    }));
+    const models = Object.entries(api.models || {})
+      .filter(([key]) => SIMPLE_LIGHT_KEYS.has(key))
+      .map(([key, model]) => ({ key, ...model }));
     const maxRadius = getConfiguredMaxLightRadius();
     const maxRadiusValue = getRawConfiguredMaxLightRadius();
 
-    const selectedLightKey = this.options.selectedLightKey || "torchLight";
+    const selectedLightKeyOption = String(this.options.selectedLightKey || "").trim();
+    const selectedLightKey = models.some(model => model.key === selectedLightKeyOption)
+      ? selectedLightKeyOption
+      : (models[0]?.key || "torchLight");
     const selectedModelRaw = models.find(model => model.key === selectedLightKey) || models[0] || {};
     const selectedModel = clampLightPreset({
       intensity: 0.5,
@@ -81,6 +84,8 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   activateListeners(html) {
+    const getApi = () => window[GLOBAL_API_KEY] || { models: {} };
+
     const scheduleLivePreview = () => {
       if (this.options?.applyOnSave !== true && !this.options?.tokenId) return;
       if (this._alPreviewTimer) clearTimeout(this._alPreviewTimer);
@@ -92,19 +97,15 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
 
     const syncRadiusUiConstraints = () => {
       const rawMax = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
-      const effectiveMax = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 9999;
       const sliderMax = getRadiusSliderMax(normalizeMaxLightRadiusLimit(rawMax));
       const dimInput = html.querySelector("#al-dim");
       const brightInput = html.querySelector("#al-bright");
+      const simpleRangeInput = html.querySelector("#al-simple-range");
       if (dimInput) dimInput.max = String(sliderMax);
       if (brightInput) brightInput.max = String(sliderMax);
-      const note = html.querySelector(".al-form-note");
-      if (note) {
-        note.textContent = (rawMax > 0)
-          ? `Rayon max applique : ${effectiveMax} (mettre 0 pour illimite)`
-          : `Rayon max illimite (0) - curseurs bornes par la scene (${sliderMax})`;
-      }
+      if (simpleRangeInput) simpleRangeInput.max = String(sliderMax);
       syncRadiusDisplays();
+      syncSimpleControlsFromAdvanced();
     };
 
     const syncRadiusDisplays = () => {
@@ -116,10 +117,63 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       if (brightValue && brightInput) brightValue.textContent = formatRadiusValue(brightInput.value);
     };
 
-    html.querySelector("#light-select")?.addEventListener("change", event => {
-      const api = window[GLOBAL_API_KEY] || { models: {} };
-      const selectedKey = event.target.value;
-      const model = api.models?.[selectedKey];
+    const syncSimpleControlsFromAdvanced = () => {
+      const simpleRangeInput = html.querySelector("#al-simple-range");
+      const simpleAngleInput = html.querySelector("#al-simple-angle");
+      const dimInput = html.querySelector("#al-dim");
+      const angleInput = html.querySelector("#al-angle");
+
+      if (simpleRangeInput && dimInput) {
+        simpleRangeInput.value = dimInput.value;
+        const simpleRangeValue = html.querySelector("#al-simple-range-value");
+        if (simpleRangeValue) simpleRangeValue.textContent = formatRadiusValue(simpleRangeInput.value);
+      }
+      if (simpleAngleInput && angleInput) {
+        simpleAngleInput.value = angleInput.value;
+        const simpleAngleValue = html.querySelector("#al-simple-angle-value");
+        if (simpleAngleValue) simpleAngleValue.textContent = String(Math.round(Number(simpleAngleInput.value) || 0));
+      }
+    };
+
+    const applySimpleControlsToAdvanced = () => {
+      const simpleRangeInput = html.querySelector("#al-simple-range");
+      const simpleAngleInput = html.querySelector("#al-simple-angle");
+      const dimInput = html.querySelector("#al-dim");
+      const brightInput = html.querySelector("#al-bright");
+      const angleInput = html.querySelector("#al-angle");
+      if (!simpleRangeInput || !dimInput || !brightInput || !angleInput) return;
+
+      const rawMax = normalizeMaxLightRadiusSettingValue(html.querySelector("#al-max-radius")?.value);
+      const effectiveMax = normalizeMaxLightRadiusLimit(rawMax);
+      const rangeValue = clampLightRadius(simpleRangeInput.value, effectiveMax);
+
+      const currentDim = Number(dimInput.value);
+      const currentBright = Number(brightInput.value);
+      const ratio = (currentDim > 0)
+        ? clampNumber(currentBright / currentDim, 0, 1, 0.5)
+        : 0.5;
+      const radii = normalizeLightRadii(rangeValue, rangeValue * ratio, effectiveMax);
+      dimInput.value = String(radii.dim);
+      brightInput.value = String(radii.bright);
+      angleInput.value = String(Math.round(clampNumber(simpleAngleInput?.value, 0, 360, 360)));
+
+      syncRadiusDisplays();
+      syncSimpleControlsFromAdvanced();
+    };
+
+    const refreshAnimationOptions = () => {
+      const animationSelect = html.querySelector("#al-animation");
+      if (!animationSelect) return;
+      const animations = Object.keys(CONFIG.Canvas.lightAnimations || {});
+      animationSelect.innerHTML = "";
+      animationSelect.append(new Option("None", "none"));
+      for (const animation of animations) {
+        const label = game.i18n.localize(CONFIG.Canvas.lightAnimations[animation]?.label || animation);
+        animationSelect.append(new Option(label, animation));
+      }
+    };
+
+    const applyModelToForm = model => {
       if (!model) return;
       const normalized = clampLightPreset(model);
 
@@ -127,15 +181,33 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       html.querySelector("#al-dim").value = normalized.dim ?? 0;
       html.querySelector("#al-bright").value = normalized.bright ?? 0;
       html.querySelector("#al-angle").value = normalized.angle ?? 360;
-      html.querySelector("#al-intensity").value = normalized.intensity ?? 0.5;
-      html.querySelector("#al-intensity-value").textContent = String(normalized.intensity ?? 0.5);
+      const intensityInput = html.querySelector("#al-intensity");
+      if (intensityInput) intensityInput.value = normalized.intensity ?? 0.5;
+      const intensityValue = html.querySelector("#al-intensity-value");
+      if (intensityValue) intensityValue.textContent = String(normalized.intensity ?? 0.5);
 
       const animationSelect = html.querySelector("#al-animation");
-      if (animationSelect) {
-        animationSelect.value = normalized.animation?.type || "none";
-      }
-
+      if (animationSelect) animationSelect.value = normalized.animation?.type || "none";
       syncRadiusDisplays();
+      syncSimpleControlsFromAdvanced();
+    };
+
+    const getSelectedModel = () => {
+      const selectedKey = String(html.querySelector("#light-select")?.value || "").trim();
+      if (!SIMPLE_LIGHT_KEYS.has(selectedKey)) return null;
+      if (!selectedKey) return null;
+      const api = getApi();
+      return api.models?.[selectedKey] || null;
+    };
+
+    html.querySelector("#light-select")?.addEventListener("change", event => {
+      const selectedKey = String(event.target?.value || "").trim();
+      if (!SIMPLE_LIGHT_KEYS.has(selectedKey)) return;
+      if (!selectedKey) return;
+      const api = getApi();
+      const model = api.models?.[selectedKey];
+      if (!model) return;
+      applyModelToForm(model);
       scheduleLivePreview();
     });
 
@@ -148,6 +220,23 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       });
     });
 
+    html.querySelector(".al-cancel-button")?.addEventListener("click", event => {
+      event.preventDefault();
+      const model = getSelectedModel();
+      if (!model) return;
+      applyModelToForm(model);
+      scheduleLivePreview();
+    });
+
+    html.querySelector("#al-simple-range")?.addEventListener("input", () => {
+      applySimpleControlsToAdvanced();
+      scheduleLivePreview();
+    });
+    html.querySelector("#al-simple-angle")?.addEventListener("input", () => {
+      applySimpleControlsToAdvanced();
+      scheduleLivePreview();
+    });
+
     html.querySelector("#al-max-radius")?.addEventListener("change", () => {
       syncRadiusUiConstraints();
       const dimInput = html.querySelector("#al-dim");
@@ -156,12 +245,14 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       const normalized = normalizeLightRadii(dimInput?.value, brightInput?.value, normalizeMaxLightRadiusLimit(maxRadius));
       if (dimInput) dimInput.value = String(normalized.dim);
       if (brightInput) brightInput.value = String(normalized.bright);
+      syncSimpleControlsFromAdvanced();
       scheduleLivePreview();
     });
 
     html.querySelectorAll("#al-dim, #al-bright").forEach(input => {
       input.addEventListener("input", () => {
         syncRadiusDisplays();
+        syncSimpleControlsFromAdvanced();
         scheduleLivePreview();
       });
       input.addEventListener("change", () => {
@@ -172,17 +263,21 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
         if (dimInput) dimInput.value = String(normalized.dim);
         if (brightInput) brightInput.value = String(normalized.bright);
         syncRadiusDisplays();
+        syncSimpleControlsFromAdvanced();
         scheduleLivePreview();
       });
     });
 
     html.querySelector("#al-color")?.addEventListener("input", scheduleLivePreview);
-    html.querySelector("#al-angle")?.addEventListener("input", scheduleLivePreview);
+    html.querySelector("#al-angle")?.addEventListener("input", () => {
+      syncSimpleControlsFromAdvanced();
+      scheduleLivePreview();
+    });
     html.querySelector("#al-animation")?.addEventListener("change", scheduleLivePreview);
 
     html.querySelector(".al-submit-button")?.addEventListener("click", async event => {
       if (this._alSaveInFlight) return;
-      const api = window[GLOBAL_API_KEY] || { models: {} };
+      const api = getApi();
       const form = this.element.querySelector("form");
       if (!form) return;
       const saveButton = event.currentTarget;
@@ -192,6 +287,10 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       try {
         const lightSelect = form.querySelector("#light-select");
         const selectedKey = String(lightSelect?.value || "").trim();
+        if (!SIMPLE_LIGHT_KEYS.has(selectedKey)) {
+          ui.notifications.error("BM Lampe Torche | Modele de lumiere invalide.");
+          return;
+        }
         const modelData = foundry.utils.duplicate(api.models?.[selectedKey] ?? {});
 
         if (!selectedKey || !modelData) {
@@ -229,26 +328,9 @@ export class ControlPanelLight extends HandlebarsApplicationMixin(ApplicationV2)
       }
     });
 
-    const animationSelect = html.querySelector("#al-animation");
-    if (animationSelect) {
-      const animations = Object.keys(CONFIG.Canvas.lightAnimations || {});
-      animationSelect.innerHTML = "";
-      animationSelect.append(new Option("None", "none"));
-      for (const animation of animations) {
-        const label = game.i18n.localize(CONFIG.Canvas.lightAnimations[animation]?.label || animation);
-        animationSelect.append(new Option(label, animation));
-      }
-
-      const selectedKey = html.querySelector("#light-select")?.value;
-      const api = window[GLOBAL_API_KEY] || { models: {} };
-      const selectedModel = api.models?.[selectedKey];
-      if (selectedModel?.animation?.type) {
-        animationSelect.value = selectedModel.animation.type;
-      }
-    }
-
+    refreshAnimationOptions();
+    applyModelToForm(getSelectedModel());
     syncRadiusUiConstraints();
-    syncRadiusDisplays();
   }
 }
 
