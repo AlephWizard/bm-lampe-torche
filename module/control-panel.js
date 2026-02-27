@@ -5,6 +5,7 @@ const GLOBAL_API_KEY = "BmLampeTorche";
 const LIGHT_MODELS_SETTING = "lightModels";
 const TOKEN_BUTTON_SETTING = "tokenButton";
 const LIGHT_ICON_SETTING = "lightIcon";
+const DEFAULT_LIGHT_MODEL_SETTING = "defaultLightModel";
 const MAX_LIGHT_RADIUS_SETTING = "maxLightRadius";
 
 export const DEFAULT_LIGHT_MODELS = {
@@ -145,6 +146,16 @@ Hooks.once("init", async function () {
     default: "feu"
   });
 
+  game.settings.register(MODULE_ID, DEFAULT_LIGHT_MODEL_SETTING, {
+    name: game.i18n.localize("agnostic-light.controlPanel.defaultLightModel"),
+    hint: game.i18n.localize("agnostic-light.controlPanel.defaultLightModelHint"),
+    scope: "world",
+    config: true,
+    type: String,
+    choices: getDefaultLightModelChoices(),
+    default: "torchLight"
+  });
+
   game.settings.register(MODULE_ID, MAX_LIGHT_RADIUS_SETTING, {
     name: "Rayon maximal de torche",
     hint: "Plafond applique aux rayons Tamise/Lumineux (en unites de scene). Mettre 0 pour aucune limite.",
@@ -176,10 +187,16 @@ Hooks.once("init", async function () {
 Hooks.once("ready", async () => {
   const savedLight = foundry.utils.duplicate(game.settings.get(MODULE_ID, LIGHT_MODELS_SETTING) || {});
   const fixedLight = clampAllLightModels(sanitizeModels(savedLight, DEFAULT_LIGHT_MODELS, { strict: true }));
+  const configuredDefaultModel = String(game.settings.get(MODULE_ID, DEFAULT_LIGHT_MODEL_SETTING) || "").trim();
+  const validDefaultModel = resolveValidDefaultLightModel(configuredDefaultModel, fixedLight);
 
   if (!objectsEqual(savedLight, fixedLight)) {
     await game.settings.set(MODULE_ID, LIGHT_MODELS_SETTING, fixedLight);
     ui.notifications.info(game.i18n.localize("agnostic-light.notifications.lightReset"));
+  }
+
+  if (validDefaultModel && validDefaultModel !== configuredDefaultModel) {
+    await game.settings.set(MODULE_ID, DEFAULT_LIGHT_MODEL_SETTING, validDefaultModel);
   }
 
   window[GLOBAL_API_KEY] = {
@@ -221,11 +238,26 @@ function objectsEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function getDefaultLightModelChoices() {
+  const choices = {};
+  for (const [key, model] of Object.entries(DEFAULT_LIGHT_MODELS)) {
+    choices[key] = game.i18n.localize(model.name);
+  }
+  return choices;
+}
+
+function resolveValidDefaultLightModel(candidate, models = {}) {
+  const normalized = String(candidate || "").trim();
+  if (normalized && Object.prototype.hasOwnProperty.call(models, normalized)) return normalized;
+  if (Object.prototype.hasOwnProperty.call(models, "torchLight")) return "torchLight";
+  return Object.keys(models).find(Boolean) || "torchLight";
+}
+
 function sanitizeModels(saved, defaults, { strict = true } = {}) {
   const result = {};
   for (const [key, defModel] of Object.entries(defaults)) {
     const candidate = saved?.[key];
-    if (!candidate) {
+    if (!isPlainObject(candidate)) {
       result[key] = foundry.utils.duplicate(defModel);
       continue;
     }
@@ -233,29 +265,37 @@ function sanitizeModels(saved, defaults, { strict = true } = {}) {
     if (strict) {
       const mismatch = Object.entries(defModel).some(([k, v]) => {
         if (!(k in candidate)) return true;
-        if (v !== null && typeof v === "object") return typeof candidate[k] !== "object";
+        if (v !== null && typeof v === "object") return !isPlainObject(candidate[k]);
         return (candidate[k] !== null && typeof candidate[k] !== typeof v);
       });
       result[key] = mismatch
         ? foundry.utils.duplicate(defModel)
-        : foundry.utils.mergeObject(defModel, candidate, {
-            inplace: false,
-            insertKeys: true,
-            insertValues: true,
-            overwrite: true,
-            enforceTypes: true
-          });
+        : mergeModelWithFallback(defModel, candidate, key);
     } else {
-      result[key] = foundry.utils.mergeObject(defModel, candidate, {
-        inplace: false,
-        insertKeys: true,
-        insertValues: true,
-        overwrite: true,
-        enforceTypes: true
-      });
+      result[key] = mergeModelWithFallback(defModel, candidate, key);
     }
   }
   return result;
+}
+
+function mergeModelWithFallback(defModel, candidate, modelKey = "") {
+  try {
+    return foundry.utils.mergeObject(foundry.utils.duplicate(defModel), candidate, {
+      inplace: false,
+      insertKeys: true,
+      insertValues: true,
+      overwrite: true,
+      // Old worlds can contain mixed types; let clamp/normalization sanitize values.
+      enforceTypes: false
+    });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Invalid light preset "${modelKey}", default restored.`, error);
+    return foundry.utils.duplicate(defModel);
+  }
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function getConfiguredMaxLightRadius() {

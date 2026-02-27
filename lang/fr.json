@@ -9,6 +9,8 @@
   "agnostic-light.controlPanel.confighint": "Configurez la luminosité de base d'une torche.",
   "agnostic-light.controlPanel.lightIcon": "Icône de lumière",
   "agnostic-light.controlPanel.lightIconhint": "Icône s'affichant sur le jeton de la créature.",
+  "agnostic-light.controlPanel.defaultLightModel": "Modele de lumiere par defaut",
+  "agnostic-light.controlPanel.defaultLightModelHint": "Prereglage utilise au clic gauche si le token n'a pas de modele valide.",
   "agnostic-light.controlPanel.tokenButton": "Bouton sur le jeton",
   "agnostic-light.controlPanel.tokenButtonhint": "Afficher l'option de gestion des torches sur le jeton pour les joueurs.",
   "agnostic-light.controlPanel.lightPresets": "Bouton de préréglages de lumière",

@@ -9,6 +9,8 @@
   "agnostic-light.controlPanel.confighint": "Configure the base brightness of a torch.",
   "agnostic-light.controlPanel.lightIcon": "Light Icon",
   "agnostic-light.controlPanel.lightIconhint": "Icon displayed on the creature's token.",
+  "agnostic-light.controlPanel.defaultLightModel": "Default light model",
+  "agnostic-light.controlPanel.defaultLightModelHint": "Preset used by left-click toggle when no valid token model is set.",
   "agnostic-light.controlPanel.tokenButton": "Token Button",
   "agnostic-light.controlPanel.tokenButtonhint": "Display the torch management option on the token for players.",
   "agnostic-light.controlPanel.lightPresets": "Light Presets Button",
